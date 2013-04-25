@@ -25,6 +25,7 @@ def four_center_integral_decay(
         chisq_xmin=None, chisq_xmax=None,
         basis="cc-pV5Z",
         int_type="eri",
+        qq_fit=False,
         max_fxn=lambda x: float(np.amax(abs(x))),
         curve_fit_options=dict(
             maxfev=6000,
@@ -45,6 +46,14 @@ def four_center_integral_decay(
 
     if isinstance(r12s, Number):
         r12s = [r12s] * len(quartets)
+    if isinstance(r34s, Number):
+        r34s = [r34s] * len(quartets)
+    if len(quartets) == 1 and len(r12s) != 1:
+        quartets = list(quartets) * len(r12s)
+    if len(r12s) != len(r34s) or len(r34s) != len(quartets):
+        raise ValueError("Dimension mismatch: {} != {} != {}".format(
+            len(r12s), len(r34s), len(quartets)
+        ))
 
 
     xpoints = frange(xmin, xmax, npts)
@@ -59,29 +68,38 @@ def four_center_integral_decay(
     #        err_axes.set_yscale("log")
     #========================================#
     decays = defaultdict(lambda: [])
+    int_sets = defaultdict(lambda: [])
     for r in xpoints:
-        int_set = IntDataSet(
-            centers=[
-                [-r12/2, 0, 0],
-                [r12/2, 0, 0],
-                [-r34/2, 0, r],
-                [r34/2, 0, r]
-            ],
-            basis_name=basis
-        )
+        for r12, r34 in zip(r12s, r34s):
+            int_sets[(r12,r34)].append(IntDataSet(
+                    centers=[
+                        [-r12/2, 0, 0],
+                        [r12/2, 0, 0],
+                        [-r34/2, 0, r],
+                        [r34/2, 0, r]
+                    ],
+                    basis_name=basis
+                )
+            )
 
-        for q in quartets:
-            decays[q].append(
-                max_fxn(int_set.int_for(*q).get_ints(int_type))
+        for q, r12, r34 in zip(quartets, r12s, r34s):
+            decays[(q,r12,r34)].append(
+                max_fxn(int_sets[(r12,r34)].int_for(*q).get_ints(int_type))
             )
     #========================================#
-    for q in quartets:
+    for q, r12, r34 in zip(quartets, r12s, r34s):
+        qk = (q, r12, r34)
         # Plot the values themselves
         if normalize:
-            decay = list(Vector(decays[q])/max(decays[q]))
+            decay = list(Vector(decays[qk])/max(decays[qk]))
         else:
-            decay = decays[q]
-        name = r"$( {0}_{4} {1}_{5} |\ {2}_{6} {3}_{7} )$ decay".format(*(list(q)+["abcd"[c] for c in centers]))
+            decay = decays[qk]
+        if r12 == 0 and r34 == 0:
+            name = "$( {0}_a {1}_a |\\ {2}_b {3}_b )$ decay".format(*q)
+        else:
+            name = "$( {0}_{4} {1}_{5} |\\ {2}_{6} {3}_{7} )$ decay\n($R_{{ab}} = {8:.2g}$, $R_{{cd}} = {9:.2g})$".format(
+                *(list(q)+["abcd"[c] for c in centers]+[r12,r34])
+            )
         ax.plot(
             xpoints, decay,
             color=colors[color_idx % len(colors)],
@@ -95,6 +113,10 @@ def four_center_integral_decay(
             (xx, yy) for xx, yy in zip(xpoints, decay)
                     if (fit_xmin is None or xx >= fit_xmin) and (fit_xmax is None or xx <= fit_xmax)
         ])
+        if qq_fit:
+            q1 = max_fxn(int_sets[(r12,r34)].int_for(q[0],q[1],q[0],q[1]).get_ints(int_type))
+            q2 = max_fxn(int_sets[(r12,r34)].int_for(q[2],q[3],q[2],q[3]).get_ints(int_type))
+
         popt, _ = curve_fit(
             fit_function,
             fit_x,
@@ -405,22 +427,47 @@ if __name__ == "__main__":
         )
 
 
+    ####################################################################
+    #                         Useful!!!!!                              #
+    ####################################################################
     if 1:
         four_center_integral_decay(
             quartets=(
                 # delta_l = 5
-                (1,14,14,14),
+                (14,14,1,12),
                 # delta_l = 2
                 #(1,5,1,5),
                 # delta_l = 8
                 #(1,14,1,14),
             ),
-            r12=0.1, r34=0.0,
-            fit_function=one_over_r,
-            fit_fxn_name_template="${0:.3g}(R_{{ab}}-{1:.3g})^{{-1}}$",
+            r12s=[0.0,1.0,2.0,0.0,1.0,2.0],
+            r34s=[0.0,0.0,0.0,1.0,1.0,1.0],
+            fit_function=one_over_rn,
+            fit_fxn_name_template="${0:.3g} / (R_{{ab}} - {1:.3g})^{{{2:.2g}}}$",
             fit_xmin=5.0, fit_xmax=20,
-            xmin=0.5, xmax=50,
-            npts=75,
-            chisq_xmax=50,
-            normalize=False
+            xmin=0.5, xmax=20,
+            npts=20,
+            normalize=True
+        )
+
+    # Important conclusion:
+    #   Three center integrals (where one center has large angular momentum)
+    #   decay much more rapidly than four center analogs!
+
+    if 1:
+        four_center_integral_decay(
+            quartets=(
+                # delta_l = 5
+                (14,14,1,12),
+                # delta_l = 2
+                #(1,5,1,5),
+                # delta_l = 8
+                #(1,14,1,14),
+            ),
+            r12s=[0.0,1.0,2.0,0.0,1.0,2.0],
+            r34s=[0.0,0.0,0.0,1.0,1.0,1.0],
+            fit_function=one_over_rn,
+            fit_fxn_name_template="${0:.3g} / (R_{{ab}} - {1:.3g})^{{{2:.2g}}}$",
+            fit_xmin=5.0, fit_xmax=20,
+            xmin=0.5, xmax=20, npts=20,
         )
