@@ -62,19 +62,20 @@ class IntDataSet(object):
         # Create the list of IntData objects
         self.int_data = {}
 
-    def int_for(self, i, j, k, l):
-        key = (i,j,k,l)
+    def int_for(self, i, j, k, l, centers=(0,1,2,3)):
+        key = (i,j,k,l,centers)
         if key in self.int_data:
             return self.int_data[key]
         else:
+            center_nums = [self.center_numbers[x] for x in centers]
             rv = IntData(
                 basis=self.basis,
                 factory=self.factory,
-                center_nums=self.center_numbers,
-                shells=[self.basis.shell(icent, ish) for icent, ish in zip(self.center_numbers, key)],
+                center_nums=center_nums,
+                shells=[self.basis.shell(icent, ish) for icent, ish in zip(center_nums, key)],
                 parent_set=self
             )
-            self.int_data[(i,k,k,l)] = rv
+            self.int_data[key] = rv
             return rv
 
 #--------------------------------------------------------------------------------#
